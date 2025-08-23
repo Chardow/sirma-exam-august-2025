@@ -1,0 +1,31 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
+    margin: 0;
+    padding: 0;
+}
+
+header {
+    background-color: #333;
+    color: white;
+    padding: 1rem;
+    text-align: center;
+}
+
+#search-form input {
+    width: 300px;
+    padding: 0.5rem;
+}
+
+#search-form button {
+    padding: 0.5rem;
+}
+
+#results-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 1rem;
+    gap: 1rem;
+}
