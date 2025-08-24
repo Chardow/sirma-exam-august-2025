@@ -17,7 +17,113 @@ const App = (() => {
         resultsContainer: document.getElementById('results-container'),
         movieModal: document.getElementById('movie-modal'),
         modalBody: document.getElementById('modal-body'),
-        closeBtn: document.querySelector('.close-btn')
+        closeBtn: document.querySelector('.close-btn'),
+        showFavoritesBtn: document.getElementById('show-favorites-btn')
+    };
+
+    /**
+     * Модул за управление на любимите филми в Local Storage.
+     */
+    const FavoritesManager = (() => {
+        const FAVORITES_KEY = 'movieApp.favorites';
+
+        /**
+         * Взима всички любими филми от Local Storage.
+         * @returns {Array}
+         */
+        const getFavorites = () => {
+            return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || [];
+        };
+
+        /**
+         * Запазва масив с любими филми в Local Storage.
+         * @param {Array} favorites
+         */
+        const saveFavorites = (favorites) => {
+            localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+        };
+
+        /**
+         * Проверява дали филм е в любими.
+         * @param {string} imdbID
+         * @returns {boolean}
+         */
+        const isFavorite = (imdbID) => {
+            return getFavorites().includes(imdbID);
+        };
+
+        /**
+         * Добавя филм към любими.
+         * @param {string} imdbID
+         */
+        const addFavorite = (imdbID) => {
+            if (isFavorite(imdbID)) return; // Ако по някаква случайност се опитат да го въведат втори път като любим
+            const favorites = getFavorites();
+            favorites.push(imdbID);
+            saveFavorites(favorites);
+        };
+
+        /**
+         * Премахва филм от любими.
+         * @param {string} imdbID
+         */
+        const removeFavorite = (imdbID) => {
+            let favorites = getFavorites();
+            favorites = favorites.filter(id => id !== imdbID);
+            saveFavorites(favorites);
+        };
+
+        // Публичен интерфейс на FavoritesManager
+        return {
+            getFavorites,
+            isFavorite,
+            addFavorite,
+            removeFavorite
+        };
+    })();
+    /**
+     * Прихващаме натискането на бутона за добавяне и премахване от любими.
+     * @param {Event} event
+     */
+    const handleFavoriteButtonClick = (event) => {
+        const button = event.target;
+        const imdbID = button.dataset.imdbid;
+
+        if (FavoritesManager.isFavorite(imdbID)) {
+            FavoritesManager.removeFavorite(imdbID);
+            button.textContent = 'Добави в любими';
+            button.classList.remove('is-favorite');
+        } else {
+            FavoritesManager.addFavorite(imdbID);
+            button.textContent = 'Премахни от любими';
+            button.classList.add('is-favorite');
+        }
+    };
+    const showFavoriteMovies = async () => {
+        // Изчистваме контейнера и полето за търсене
+        dom.resultsContainer.innerHTML = '<h2>Вашите любими филми:</h2>';
+        dom.searchInput.value = '';
+
+        const favoriteIDs = FavoritesManager.getFavorites();
+
+        if (favoriteIDs.length === 0) {
+            dom.resultsContainer.innerHTML += '<p>Първо си изберете любими филми, а след това ги търсете тук :).</p>';
+            return;
+        }
+
+        // Promise.all ще изчака всички заявки да приключат.
+        const favoriteMoviesPromises = favoriteIDs.map(id => fetchMovieDetails(id));
+        const favoriteMovies = await Promise.all(favoriteMoviesPromises);
+
+        //За да може rendermovies да работи както трябва, ще се наложи да добавим ръчно imdbid
+        const moviesWithId = favoriteMovies.map(movie => {
+            if (movie) { // Проверяваме дали филмът не е null (в случай на грешка)
+                return { ...movie, imdbID: movie.imdbID || movie.imdbID };
+            }
+            return null;
+        }).filter(Boolean); 
+
+        renderMovies(moviesWithId);
     };
 
      /**
@@ -65,6 +171,10 @@ const App = (() => {
         const movie = await fetchMovieDetails(imdbID);
         if (movie) {
             const posterSrc = movie.Poster !== 'N/A' ? movie.Poster : 'https://via.placeholder.com/200x300.png?text=No+Image';
+            const isFavorite = FavoritesManager.isFavorite(movie.imdbID);
+            const buttonText = isFavorite ? 'Премахни от любими' : 'Добави в любими';
+            const buttonClass = isFavorite ? 'is-favorite' : '';
+
             dom.modalBody.innerHTML = `
                 <img src="${posterSrc}" alt="${movie.Title} Poster">
                 <div>
@@ -74,9 +184,12 @@ const App = (() => {
                     <p><strong>Актьори:</strong> ${movie.Actors}</p>
                     <p>${movie.Plot}</p>
                     <p><strong>IMDb Рейтинг:</strong> ${movie.imdbRating} / 10</p>
+                    <button id="favorite-btn" class="${buttonClass}" data-imdbid="${movie.imdbID}">${buttonText}</button>
                 </div>
             `;
             dom.movieModal.style.display = 'block';
+            //лисънар за бутона
+            document.getElementById('favorite-btn').addEventListener('click', handleFavoriteButtonClick);
         }
     };
     //А тук го крием :)
@@ -138,6 +251,14 @@ const App = (() => {
         // Първо се уверяваме, че работим на бял лист, след това започваме да пълним
         dom.resultsContainer.innerHTML = '';
 
+        if (dom.resultsContainer.innerHTML.indexOf('<h2>Вашите любими филми:</h2>') === -1) {
+            dom.resultsContainer.innerHTML = '';
+        } else {
+            // Ако показваме любими, изтриваме само съобщението "зареждане..." ако го има
+            const loadingMessage = dom.resultsContainer.querySelector('p');
+            if (loadingMessage) loadingMessage.remove();
+        }
+
         if (movies.length === 0) {
             dom.resultsContainer.innerHTML = '<p>Няма намерени резултати. Опитайте с друго заглавие.</p>';
             return;
@@ -178,6 +299,8 @@ const App = (() => {
         });
         // Прикачаме и за контейнера, та да си кликат на воля
         dom.resultsContainer.addEventListener('click', handleMovieCardClick);
+        //Ще гледаме ли любимите филми?
+         dom.showFavoritesBtn.addEventListener('click', showFavoriteMovies);
 
     };
 
